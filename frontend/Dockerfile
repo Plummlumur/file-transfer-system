@@ -10,14 +10,8 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install --no-audit --no-fund
 
-# Copy public directory (needed for build)
-COPY public/ ./public/
-
-# Copy source code
-COPY src/ ./src/
-
-# Copy other necessary files for build
-COPY .env* ./
+# Copy all source code and assets
+COPY . .
 
 # Build the application
 RUN npm run build
