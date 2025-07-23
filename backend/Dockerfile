@@ -17,8 +17,8 @@ RUN adduser -S nodejs -u 1001
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies (use npm install if no package-lock.json)
-RUN if [ -f package-lock.json ]; then npm ci --only=production; else npm install --only=production; fi && npm cache clean --force
+# Install dependencies
+RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 
 # Copy application code
 COPY . .
