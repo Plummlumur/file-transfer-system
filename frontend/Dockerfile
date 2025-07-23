@@ -10,11 +10,15 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install --no-audit --no-fund
 
+# Debug: Check what files are available in build context
+COPY . ./temp-debug/
+RUN echo "=== Files in build context ===" && ls -la temp-debug/ && echo "=== End of build context ===" && rm -rf temp-debug/
+
 # Copy all source code and assets
 COPY . .
 
 # Debug: List files to verify copy worked
-RUN ls -la && ls -la public/
+RUN echo "=== Files after copy ===" && ls -la && echo "=== Checking for public directory ===" && if [ -d public ]; then ls -la public/; else echo "PUBLIC DIRECTORY NOT FOUND"; fi
 
 # Build the application
 RUN npm run build
