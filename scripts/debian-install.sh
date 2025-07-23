@@ -173,6 +173,12 @@ update_system() {
 install_docker() {
     if command -v docker &> /dev/null; then
         log_info "Docker already installed: $(docker --version)"
+        # Check if user can access docker without sudo
+        if ! docker ps &>/dev/null; then
+            log_info "Adding current user to docker group..."
+            sudo usermod -aG docker $USER
+            log_warning "Docker group added. Group changes will take effect for new sessions."
+        fi
         return 0
     fi
     
@@ -197,7 +203,7 @@ install_docker() {
     sudo systemctl start docker
     
     log_success "Docker installed successfully"
-    log_warning "Please log out and back in for Docker group changes to take effect"
+    log_warning "Docker group added. Group changes will take effect for new sessions."
 }
 
 # Install Node.js
@@ -372,9 +378,20 @@ install_docker_stack() {
     
     cd "$APP_DIR"
     
+    # Determine docker command (with or without sudo)
+    local docker_cmd="docker"
+    if ! docker ps &>/dev/null; then
+        log_info "Using sudo for Docker commands (group changes require new session)"
+        docker_cmd="sudo docker"
+    fi
+    
     # Build and start containers
     log_info "Building and starting Docker containers..."
-    docker compose up -d --build
+    if ! ${docker_cmd} ps &>/dev/null; then
+        error_exit "Cannot connect to Docker daemon. Please ensure Docker is running and user has proper permissions."
+    fi
+    
+    ${docker_cmd} compose up -d --build
     
     # Wait for services to be ready
     log_info "Waiting for services to start..."
@@ -383,7 +400,7 @@ install_docker_stack() {
     # Check service health
     local retries=12
     while [[ $retries -gt 0 ]]; do
-        if docker compose ps | grep -q "Up"; then
+        if ${docker_cmd} compose ps | grep -q "Up"; then
             log_success "Docker services are running"
             break
         fi
@@ -393,13 +410,15 @@ install_docker_stack() {
     done
     
     if [[ $retries -eq 0 ]]; then
+        log_error "Docker services failed to start properly. Checking logs..."
+        ${docker_cmd} compose logs --tail=20
         error_exit "Docker services failed to start properly"
     fi
     
     # Run database migrations
     log_info "Running database migrations..."
-    docker compose exec -T backend npm run migrate || log_warning "Migration failed - database may need manual setup"
-    docker compose exec -T backend npm run seed || log_warning "Seeding failed - continuing anyway"
+    ${docker_cmd} compose exec -T backend npm run migrate || log_warning "Migration failed - database may need manual setup"
+    ${docker_cmd} compose exec -T backend npm run seed || log_warning "Seeding failed - continuing anyway"
     
     log_success "Docker stack installation completed"
 }
@@ -616,12 +635,18 @@ echo "[$DATE] Starting maintenance..." >> "$LOG_FILE"
 if command -v docker compose &> /dev/null && [[ -f docker-compose.yml ]]; then
     cd /opt/file-transfer
     
+    # Determine docker command
+    DOCKER_CMD="docker"
+    if ! docker ps &>/dev/null; then
+        DOCKER_CMD="sudo docker"
+    fi
+    
     # Cleanup expired files
-    docker compose exec -T backend node -e "require('./src/jobs/cleanupJob').runCleanup()" >> "$LOG_FILE" 2>&1
+    ${DOCKER_CMD} compose exec -T backend node -e "require('./src/jobs/cleanupJob').runCleanup()" >> "$LOG_FILE" 2>&1
     
     # Backup database
     BACKUP_FILE="/opt/file-transfer/backups/db_backup_$(date +%Y%m%d_%H%M%S).sql"
-    docker compose exec -T database mysqldump -u root -p${DB_ROOT_PASSWORD} file_transfer > "$BACKUP_FILE" 2>> "$LOG_FILE"
+    ${DOCKER_CMD} compose exec -T database mysqldump -u root -p${DB_ROOT_PASSWORD} file_transfer > "$BACKUP_FILE" 2>> "$LOG_FILE"
     
     # Keep only last 30 days of backups
     find /opt/file-transfer/backups -name "db_backup_*.sql" -mtime +30 -delete 2>> "$LOG_FILE"
@@ -658,8 +683,13 @@ EOF
     notifempty
     create 644 $USER $USER
     postrotate
+        cd /opt/file-transfer
         if [[ "$USE_DOCKER" == "true" ]]; then
-            docker compose restart backend
+            if docker ps &>/dev/null; then
+                docker compose restart backend
+            else
+                sudo docker compose restart backend
+            fi
         else
             sudo -u $APP_USER pm2 reload file-transfer-api
         fi
@@ -674,12 +704,18 @@ EOF
 verify_installation() {
     log_info "Verifying installation..."
     
+    # Determine docker command (with or without sudo)
+    local docker_cmd="docker"
+    if [[ "$USE_DOCKER" == "true" ]] && ! docker ps &>/dev/null; then
+        docker_cmd="sudo docker"
+    fi
+    
     # Check services
     if [[ "$USE_DOCKER" == "true" ]]; then
         cd "$APP_DIR"
-        if ! docker compose ps | grep -q "Up"; then
+        if ! ${docker_cmd} compose ps | grep -q "Up"; then
             log_error "Docker services are not running properly"
-            docker compose ps
+            ${docker_cmd} compose ps
             return 1
         fi
     else
