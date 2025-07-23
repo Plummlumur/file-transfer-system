@@ -1,0 +1,453 @@
+/* App.css - Main application styles inspired by mumok.at */
+
+/* Reset and base styles */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #000000;
+  background-color: #f5f5f5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.App {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Loading states */
+.app-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background-color: #ffffff;
+}
+
+/* Maintenance mode */
+.maintenance-mode {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background-color: #f5f5f5;
+  padding: 20px;
+}
+
+.maintenance-content {
+  text-align: center;
+  background: #ffffff;
+  padding: 60px 40px;
+  border-radius: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  max-width: 500px;
+  width: 100%;
+}
+
+.maintenance-content h1 {
+  font-size: 32px;
+  font-weight: 300;
+  margin-bottom: 20px;
+  color: #000000;
+}
+
+.maintenance-content p {
+  font-size: 16px;
+  color: #666666;
+  margin: 0;
+}
+
+/* Layout overrides */
+.ant-layout {
+  min-height: 100vh;
+}
+
+.ant-layout-header {
+  background: #ffffff;
+  border-bottom: 1px solid #d9d9d9;
+  padding: 0 24px;
+  height: 64px;
+  line-height: 64px;
+}
+
+.ant-layout-sider {
+  background: #ffffff;
+  border-right: 1px solid #d9d9d9;
+}
+
+.ant-layout-content {
+  background: #f5f5f5;
+  padding: 24px;
+  margin: 0;
+}
+
+/* Menu overrides */
+.ant-menu {
+  border-right: none;
+}
+
+.ant-menu-item {
+  margin: 0;
+  height: 48px;
+  line-height: 48px;
+}
+
+.ant-menu-item:hover {
+  background-color: #f5f5f5;
+}
+
+.ant-menu-item-selected {
+  background-color: #f0f0f0;
+  font-weight: 500;
+}
+
+.ant-menu-item-selected::after {
+  border-right: 3px solid #000000;
+}
+
+/* Button overrides */
+.ant-btn {
+  border-radius: 2px;
+  font-weight: 500;
+  height: 40px;
+  padding: 0 20px;
+  border: 1px solid #d9d9d9;
+  box-shadow: none;
+}
+
+.ant-btn-primary {
+  background-color: #000000;
+  border-color: #000000;
+  color: #ffffff;
+}
+
+.ant-btn-primary:hover,
+.ant-btn-primary:focus {
+  background-color: #333333;
+  border-color: #333333;
+}
+
+.ant-btn-default:hover,
+.ant-btn-default:focus {
+  border-color: #000000;
+  color: #000000;
+}
+
+/* Card overrides */
+.ant-card {
+  border-radius: 2px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e8e8e8;
+}
+
+.ant-card-head {
+  background: #ffffff;
+  border-bottom: 1px solid #e8e8e8;
+  padding: 0 24px;
+  min-height: 56px;
+}
+
+.ant-card-head-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: #000000;
+}
+
+.ant-card-body {
+  padding: 24px;
+}
+
+/* Table overrides */
+.ant-table {
+  background: #ffffff;
+}
+
+.ant-table-thead > tr > th {
+  background: #fafafa;
+  border-bottom: 1px solid #e8e8e8;
+  color: #000000;
+  font-weight: 500;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: #f5f5f5;
+}
+
+/* Form overrides */
+.ant-form-item-label > label {
+  color: #000000;
+  font-weight: 500;
+}
+
+.ant-input,
+.ant-input-password,
+.ant-select-selector {
+  border-radius: 2px;
+  border: 1px solid #d9d9d9;
+  height: 40px;
+}
+
+.ant-input:hover,
+.ant-input-password:hover,
+.ant-select-selector:hover {
+  border-color: #000000;
+}
+
+.ant-input:focus,
+.ant-input-password:focus,
+.ant-select-focused .ant-select-selector {
+  border-color: #000000;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Upload component overrides */
+.ant-upload-drag {
+  border: 2px dashed #d9d9d9;
+  border-radius: 2px;
+  background: #fafafa;
+  transition: all 0.3s;
+}
+
+.ant-upload-drag:hover {
+  border-color: #000000;
+}
+
+.ant-upload-drag.ant-upload-drag-hover {
+  border-color: #000000;
+  background: #f0f0f0;
+}
+
+.ant-upload-drag .ant-upload-text {
+  color: #000000;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.ant-upload-drag .ant-upload-hint {
+  color: #666666;
+}
+
+/* Progress overrides */
+.ant-progress-line .ant-progress-bg {
+  background-color: #000000;
+}
+
+.ant-progress-circle .ant-progress-text {
+  color: #000000;
+}
+
+/* Tag overrides */
+.ant-tag {
+  border-radius: 2px;
+  border: 1px solid #d9d9d9;
+  background: #fafafa;
+  color: #000000;
+}
+
+/* Alert overrides */
+.ant-alert {
+  border-radius: 2px;
+  border: 1px solid;
+}
+
+.ant-alert-success {
+  background-color: #f6ffed;
+  border-color: #b7eb8f;
+}
+
+.ant-alert-info {
+  background-color: #e6f7ff;
+  border-color: #91d5ff;
+}
+
+.ant-alert-warning {
+  background-color: #fffbe6;
+  border-color: #ffe58f;
+}
+
+.ant-alert-error {
+  background-color: #fff2f0;
+  border-color: #ffccc7;
+}
+
+/* Modal overrides */
+.ant-modal {
+  border-radius: 2px;
+}
+
+.ant-modal-header {
+  background: #ffffff;
+  border-bottom: 1px solid #e8e8e8;
+  border-radius: 2px 2px 0 0;
+}
+
+.ant-modal-title {
+  color: #000000;
+  font-weight: 500;
+}
+
+/* Drawer overrides */
+.ant-drawer-header {
+  background: #ffffff;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.ant-drawer-title {
+  color: #000000;
+  font-weight: 500;
+}
+
+/* Notification overrides */
+.ant-notification {
+  border-radius: 2px;
+}
+
+/* Spin overrides */
+.ant-spin-dot-item {
+  background-color: #000000;
+}
+
+/* Custom utility classes */
+.text-center {
+  text-align: center;
+}
+
+.text-left {
+  text-align: left;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.mb-0 { margin-bottom: 0; }
+.mb-1 { margin-bottom: 8px; }
+.mb-2 { margin-bottom: 16px; }
+.mb-3 { margin-bottom: 24px; }
+.mb-4 { margin-bottom: 32px; }
+
+.mt-0 { margin-top: 0; }
+.mt-1 { margin-top: 8px; }
+.mt-2 { margin-top: 16px; }
+.mt-3 { margin-top: 24px; }
+.mt-4 { margin-top: 32px; }
+
+.p-0 { padding: 0; }
+.p-1 { padding: 8px; }
+.p-2 { padding: 16px; }
+.p-3 { padding: 24px; }
+.p-4 { padding: 32px; }
+
+.w-100 { width: 100%; }
+.h-100 { height: 100%; }
+
+.d-flex { display: flex; }
+.d-block { display: block; }
+.d-inline-block { display: inline-block; }
+.d-none { display: none; }
+
+.justify-content-center { justify-content: center; }
+.justify-content-between { justify-content: space-between; }
+.justify-content-end { justify-content: flex-end; }
+
+.align-items-center { align-items: center; }
+.align-items-start { align-items: flex-start; }
+.align-items-end { align-items: flex-end; }
+
+.flex-column { flex-direction: column; }
+.flex-wrap { flex-wrap: wrap; }
+
+/* Responsive utilities */
+@media (max-width: 768px) {
+  .ant-layout-content {
+    padding: 16px;
+  }
+  
+  .ant-card-body {
+    padding: 16px;
+  }
+  
+  .ant-layout-header {
+    padding: 0 16px;
+  }
+}
+
+@media (max-width: 576px) {
+  .ant-layout-content {
+    padding: 12px;
+  }
+  
+  .ant-card-body {
+    padding: 12px;
+  }
+  
+  .ant-layout-header {
+    padding: 0 12px;
+  }
+  
+  .maintenance-content {
+    padding: 40px 20px;
+  }
+  
+  .maintenance-content h1 {
+    font-size: 24px;
+  }
+}
+
+/* Print styles */
+@media print {
+  .ant-layout-sider,
+  .ant-layout-header,
+  .ant-btn,
+  .ant-pagination {
+    display: none !important;
+  }
+  
+  .ant-layout-content {
+    padding: 0;
+    background: #ffffff;
+  }
+  
+  .ant-card {
+    box-shadow: none;
+    border: 1px solid #000000;
+  }
+}
+
+/* Dark mode support (for future implementation) */
+@media (prefers-color-scheme: dark) {
+  /* Dark mode styles would go here */
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .ant-btn {
+    border-width: 2px;
+  }
+  
+  .ant-card {
+    border-width: 2px;
+  }
+  
+  .ant-input,
+  .ant-select-selector {
+    border-width: 2px;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

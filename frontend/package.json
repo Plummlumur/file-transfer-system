@@ -1,0 +1,54 @@
+{
+  "name": "file-transfer-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@testing-library/jest-dom": "^5.17.0",
+    "@testing-library/react": "^13.4.0",
+    "@testing-library/user-event": "^14.5.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "react-router-dom": "^6.20.1",
+    "antd": "^5.12.8",
+    "@ant-design/icons": "^5.2.6",
+    "axios": "^1.6.2",
+    "zustand": "^4.4.7",
+    "react-dropzone": "^14.2.3",
+    "resumablejs": "^1.1.0",
+    "react-hook-form": "^7.48.2",
+    "react-i18next": "^13.5.0",
+    "i18next": "^23.7.6",
+    "dayjs": "^1.11.10",
+    "recharts": "^2.8.0",
+    "react-syntax-highlighter": "^15.5.0",
+    "react-pdf": "^7.6.0",
+    "styled-components": "^6.1.6"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject",
+    "lint": "eslint src/"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "proxy": "http://localhost:8080"
+}

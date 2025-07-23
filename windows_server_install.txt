@@ -1,0 +1,745 @@
+# File Transfer System - Complete Windows Server Installation Guide
+
+## System Requirements
+- Windows Server 2019 or Windows Server 2022
+- Minimum 4GB RAM (8GB recommended)
+- Minimum 20GB disk space (50GB+ recommended for file storage)
+- Administrator privileges
+- Internet connection for package downloads
+
+## Step 1: Enable Required Windows Features
+
+### Open PowerShell as Administrator
+Right-click on PowerShell and select "Run as Administrator"
+
+### Enable IIS (Internet Information Services)
+Enable-WindowsOptionalFeature -Online -FeatureName IIS-WebServerRole, IIS-WebServer, IIS-CommonHttpFeatures, IIS-HttpErrors, IIS-HttpLogging, IIS-RequestFiltering, IIS-StaticContent, IIS-DefaultDocument, IIS-DirectoryBrowsing
+
+### Enable Hyper-V (for Docker)
+Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -All
+
+### Restart the server
+Restart-Computer
+
+## Step 2: Install Chocolatey Package Manager
+
+### Install Chocolatey
+Set-ExecutionPolicy Bypass -Scope Process -Force
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+
+### Refresh environment variables
+refreshenv
+
+## Step 3: Install Required Software
+
+### Install Git
+choco install git -y
+
+### Install Node.js 18 LTS
+choco install nodejs --version=18.19.0 -y
+
+### Install Docker Desktop
+choco install docker-desktop -y
+
+### Install Visual Studio Code (optional, for editing)
+choco install vscode -y
+
+### Install 7-Zip (for file extraction)
+choco install 7zip -y
+
+### Refresh environment variables
+refreshenv
+
+### Verify installations
+node --version
+npm --version
+git --version
+docker --version
+
+## Step 4: Install and Configure SQL Server
+
+### Option A: Install SQL Server Express (Free)
+choco install sql-server-express -y
+
+### Option B: Install SQL Server Developer Edition (Free for development)
+# Download from Microsoft website and install manually
+
+### Install SQL Server Management Studio (SSMS)
+choco install sql-server-management-studio -y
+
+### Configure SQL Server
+# Open SQL Server Configuration Manager
+# Enable TCP/IP protocol
+# Set SQL Server to Mixed Mode Authentication
+# Create database and user (see Step 5)
+
+## Step 5: Configure SQL Server Database
+
+### Open SQL Server Management Studio (SSMS)
+# Connect to localhost with Windows Authentication
+
+### Create database and user
+USE master;
+GO
+
+CREATE DATABASE file_transfer;
+GO
+
+CREATE LOGIN fileuser WITH PASSWORD = 'SecurePassword123!';
+GO
+
+USE file_transfer;
+GO
+
+CREATE USER fileuser FOR LOGIN fileuser;
+GO
+
+ALTER ROLE db_owner ADD MEMBER fileuser;
+GO
+
+## Step 6: Install and Configure IIS with URL Rewrite
+
+### Install URL Rewrite Module
+choco install urlrewrite -y
+
+### Install Application Request Routing (ARR)
+# Download from Microsoft IIS website and install manually
+# https://www.iis.net/downloads/microsoft/application-request-routing
+
+### Configure IIS
+# Open IIS Manager
+# Create new website or use Default Web Site
+# Configure reverse proxy (see Step 12)
+
+## Step 7: Download and Setup File Transfer System
+
+### Create application directory
+New-Item -ItemType Directory -Path "C:\inetpub\file-transfer" -Force
+Set-Location "C:\inetpub\file-transfer"
+
+### Clone or download the application files
+# If using git:
+git clone <your-repository-url> .
+
+# If using uploaded files, extract them here:
+# Expand-Archive -Path "file-transfer-system.zip" -DestinationPath "C:\inetpub\file-transfer"
+
+### Set proper permissions
+icacls "C:\inetpub\file-transfer" /grant "IIS_IUSRS:(OI)(CI)F" /T
+icacls "C:\inetpub\file-transfer" /grant "IUSR:(OI)(CI)F" /T
+
+## Step 8: Configure Environment Variables
+
+### Backend configuration
+Copy-Item "backend\.env.example" "backend\.env"
+
+### Edit backend environment file using notepad
+notepad "backend\.env"
+
+# Configure the following variables:
+# Database settings (SQL Server)
+DB_HOST=localhost
+DB_PORT=1433
+DB_NAME=file_transfer
+DB_USER=fileuser
+DB_PASSWORD=SecurePassword123!
+
+# JWT Secret (generate a secure random string)
+JWT_SECRET=your-super-secret-jwt-key-minimum-32-characters-long
+
+# LDAP Configuration (adjust for your Active Directory)
+LDAP_URL=ldap://your-domain-controller:389
+LDAP_BIND_DN=CN=service-account,OU=Service Accounts,DC=company,DC=local
+LDAP_BIND_PASSWORD=service-account-password
+LDAP_SEARCH_BASE=OU=Users,DC=company,DC=local
+LDAP_DOMAIN=company.local
+
+# SMTP Configuration
+SMTP_HOST=smtp.company.local
+SMTP_PORT=587
+SMTP_USER=noreply@company.local
+SMTP_PASSWORD=smtp-password
+SMTP_FROM_EMAIL=noreply@company.local
+
+# Application settings
+NODE_ENV=production
+PORT=8080
+FRONTEND_URL=https://your-server.company.local
+
+### Frontend configuration
+Copy-Item "frontend\.env.example" "frontend\.env"
+
+### Edit frontend environment file
+notepad "frontend\.env"
+
+# Configure API URL
+REACT_APP_API_URL=https://your-server.company.local/api/v1
+REACT_APP_NAME=File Transfer System
+
+## Step 9: Docker Deployment (Recommended)
+
+### Start Docker Desktop
+# Ensure Docker Desktop is running
+
+### Create Docker environment file
+Copy-Item ".env.example" ".env"
+
+### Edit Docker environment file
+notepad ".env"
+
+# Configure the following:
+DB_ROOT_PASSWORD=SecureMySQLRootPassword123!
+DB_NAME=file_transfer
+DB_USER=fileuser
+DB_PASSWORD=SecurePassword123!
+JWT_SECRET=your-super-secret-jwt-key-minimum-32-characters-long
+REDIS_PASSWORD=SecureRedisPassword123!
+
+# LDAP settings
+LDAP_URL=ldap://your-domain-controller:389
+LDAP_BIND_DN=CN=service-account,OU=Service Accounts,DC=company,DC=local
+LDAP_BIND_PASSWORD=service-account-password
+LDAP_SEARCH_BASE=OU=Users,DC=company,DC=local
+
+# SMTP settings
+SMTP_HOST=smtp.company.local
+SMTP_USER=noreply@company.local
+SMTP_PASSWORD=smtp-password
+
+### Build and start the application
+docker compose up -d
+
+### Verify all containers are running
+docker compose ps
+
+### Check logs if needed
+docker compose logs -f
+
+## Step 10: Manual Installation (Alternative to Docker)
+
+### Install dependencies
+npm install
+Set-Location backend
+npm install
+Set-Location ..\frontend
+npm install
+Set-Location ..
+
+### Build frontend
+Set-Location frontend
+npm run build
+Set-Location ..
+
+### Create necessary directories
+New-Item -ItemType Directory -Path "C:\Logs\file-transfer" -Force
+New-Item -ItemType Directory -Path "C:\inetpub\file-transfer\uploads" -Force
+
+### Set permissions for upload directory
+icacls "C:\inetpub\file-transfer\uploads" /grant "IIS_IUSRS:(OI)(CI)F" /T
+icacls "C:\Logs\file-transfer" /grant "IIS_IUSRS:(OI)(CI)F" /T
+
+### Update backend .env for manual installation
+# Edit backend\.env and update paths:
+UPLOAD_PATH=C:\inetpub\file-transfer\uploads
+LOG_FILE_PATH=C:\Logs\file-transfer
+
+### Initialize database
+Set-Location backend
+npm run migrate
+npm run seed
+Set-Location ..
+
+### Install PM2 for process management
+npm install -g pm2
+npm install -g pm2-windows-startup
+
+### Configure PM2 for Windows startup
+pm2-startup install
+
+### Create PM2 ecosystem file
+@"
+module.exports = {
+  apps: [{
+    name: 'file-transfer-api',
+    script: 'backend/src/server.js',
+    cwd: 'C:/inetpub/file-transfer',
+    instances: 1,
+    exec_mode: 'fork',
+    env: {
+      NODE_ENV: 'production',
+      PORT: 8080
+    },
+    log_file: 'C:/Logs/file-transfer/combined.log',
+    out_file: 'C:/Logs/file-transfer/out.log',
+    error_file: 'C:/Logs/file-transfer/error.log',
+    log_date_format: 'YYYY-MM-DD HH:mm:ss Z'
+  }]
+};
+"@ | Out-File -FilePath "ecosystem.config.js" -Encoding UTF8
+
+### Start application with PM2
+pm2 start ecosystem.config.js
+pm2 save
+
+## Step 11: Configure IIS Reverse Proxy
+
+### Create web.config for reverse proxy
+@"
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <system.webServer>
+        <rewrite>
+            <rules>
+                <!-- API Proxy Rule -->
+                <rule name="API Proxy" stopProcessing="true">
+                    <match url="^api/(.*)" />
+                    <action type="Rewrite" url="http://localhost:8080/api/{R:1}" />
+                </rule>
+                
+                <!-- React Router Rule -->
+                <rule name="React Router" stopProcessing="true">
+                    <match url=".*" />
+                    <conditions logicalGrouping="MatchAll">
+                        <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
+                        <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
+                        <add input="{REQUEST_URI}" pattern="^/api/" negate="true" />
+                    </conditions>
+                    <action type="Rewrite" url="/index.html" />
+                </rule>
+            </rules>
+        </rewrite>
+        
+        <!-- Security Headers -->
+        <httpProtocol>
+            <customHeaders>
+                <add name="X-Frame-Options" value="SAMEORIGIN" />
+                <add name="X-XSS-Protection" value="1; mode=block" />
+                <add name="X-Content-Type-Options" value="nosniff" />
+                <add name="Referrer-Policy" value="strict-origin-when-cross-origin" />
+                <add name="Strict-Transport-Security" value="max-age=63072000" />
+            </customHeaders>
+        </httpProtocol>
+        
+        <!-- Request Filtering -->
+        <security>
+            <requestFiltering>
+                <requestLimits maxAllowedContentLength="10737418240" />
+            </requestFiltering>
+        </security>
+        
+        <!-- Static Content -->
+        <staticContent>
+            <mimeMap fileExtension=".json" mimeType="application/json" />
+            <mimeMap fileExtension=".woff" mimeType="application/font-woff" />
+            <mimeMap fileExtension=".woff2" mimeType="application/font-woff2" />
+        </staticContent>
+        
+        <!-- Default Document -->
+        <defaultDocument>
+            <files>
+                <add value="index.html" />
+            </files>
+        </defaultDocument>
+    </system.webServer>
+</configuration>
+"@ | Out-File -FilePath "C:\inetpub\file-transfer\frontend\build\web.config" -Encoding UTF8
+
+### Configure IIS Site
+# Open IIS Manager
+# Right-click on "Default Web Site" or create new site
+# Set Physical Path to: C:\inetpub\file-transfer\frontend\build
+# Configure bindings for HTTP (port 80) and HTTPS (port 443)
+
+## Step 12: SSL Certificate Configuration
+
+### Option A: Self-signed certificate (for testing)
+# Open IIS Manager
+# Click on server name
+# Double-click "Server Certificates"
+# Click "Create Self-Signed Certificate"
+# Enter friendly name: "File Transfer System"
+# Select "Web Hosting" for certificate store
+
+### Option B: Commercial SSL Certificate
+# Purchase SSL certificate from trusted CA
+# Generate CSR in IIS Manager
+# Install certificate after receiving from CA
+
+### Option C: Let's Encrypt (using win-acme)
+choco install win-acme -y
+
+# Run win-acme to obtain certificate
+wacs.exe
+
+### Bind SSL certificate to website
+# Open IIS Manager
+# Select your website
+# Click "Bindings" in Actions panel
+# Add HTTPS binding on port 443
+# Select your SSL certificate
+
+## Step 13: Configure Windows Firewall
+
+### Open Windows Firewall with Advanced Security
+# Allow inbound connections on ports 80 and 443
+
+### PowerShell commands to configure firewall
+New-NetFirewallRule -DisplayName "HTTP Inbound" -Direction Inbound -Protocol TCP -LocalPort 80 -Action Allow
+New-NetFirewallRule -DisplayName "HTTPS Inbound" -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow
+New-NetFirewallRule -DisplayName "File Transfer API" -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow
+
+## Step 14: Configure Windows Services
+
+### Create Windows Service for File Transfer API (if not using Docker)
+
+### Install node-windows
+npm install -g node-windows
+
+### Create service installation script
+@"
+var Service = require('node-windows').Service;
+
+// Create a new service object
+var svc = new Service({
+  name: 'File Transfer API',
+  description: 'File Transfer System Backend API',
+  script: 'C:\\inetpub\\file-transfer\\backend\\src\\server.js',
+  nodeOptions: [
+    '--harmony',
+    '--max_old_space_size=4096'
+  ],
+  env: {
+    name: "NODE_ENV",
+    value: "production"
+  }
+});
+
+// Listen for the "install" event, which indicates the
+// process is available as a service.
+svc.on('install', function(){
+  svc.start();
+});
+
+svc.install();
+"@ | Out-File -FilePath "install-service.js" -Encoding UTF8
+
+### Install the service
+node install-service.js
+
+### Start the service
+Start-Service "File Transfer API"
+
+## Step 15: Configure Scheduled Tasks for Maintenance
+
+### Create cleanup script
+@"
+# File Transfer System Maintenance Script for Windows
+$logFile = "C:\Logs\file-transfer\maintenance.log"
+$date = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+
+Write-Output "$date - Starting maintenance tasks" | Out-File -Append $logFile
+
+# Cleanup expired files
+if (Get-Command docker -ErrorAction SilentlyContinue) {
+    docker compose exec backend node -e "require('./src/jobs/cleanupJob').runCleanup()"
+} else {
+    # Manual cleanup for non-Docker installation
+    Set-Location "C:\inetpub\file-transfer\backend"
+    node -e "require('./src/jobs/cleanupJob').runCleanup()"
+}
+
+# Check disk space
+$disk = Get-WmiObject -Class Win32_LogicalDisk -Filter "DeviceID='C:'"
+$freeSpaceGB = [math]::Round($disk.FreeSpace / 1GB, 2)
+Write-Output "$date - Free disk space: $freeSpaceGB GB" | Out-File -Append $logFile
+
+# Backup database (if using Docker with MySQL)
+if (Get-Command docker -ErrorAction SilentlyContinue) {
+    $backupDate = Get-Date -Format "yyyyMMdd_HHmmss"
+    $backupPath = "C:\inetpub\file-transfer\backups\db_backup_$backupDate.sql"
+    docker compose exec -T database mysqldump -u root -p$env:DB_ROOT_PASSWORD file_transfer > $backupPath
+    Write-Output "$date - Database backup created: $backupPath" | Out-File -Append $logFile
+}
+
+Write-Output "$date - Maintenance tasks completed" | Out-File -Append $logFile
+"@ | Out-File -FilePath "C:\inetpub\file-transfer\maintenance.ps1" -Encoding UTF8
+
+### Create scheduled task for daily maintenance
+$action = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-File C:\inetpub\file-transfer\maintenance.ps1"
+$trigger = New-ScheduledTaskTrigger -Daily -At "2:00AM"
+$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+
+Register-ScheduledTask -TaskName "File Transfer Maintenance" -Action $action -Trigger $trigger -Principal $principal -Settings $settings
+
+## Step 16: Configure Event Log Monitoring
+
+### Create custom event log
+New-EventLog -LogName "File Transfer System" -Source "FileTransferAPI"
+
+### Configure log retention
+Limit-EventLog -LogName "File Transfer System" -MaximumSize 50MB -OverflowAction OverwriteOlder
+
+## Step 17: Active Directory Integration
+
+### Test LDAP connection
+# Use PowerShell to test AD connectivity
+$ldapServer = "your-domain-controller"
+$searchBase = "OU=Users,DC=company,DC=local"
+
+try {
+    $searcher = New-Object System.DirectoryServices.DirectorySearcher
+    $searcher.SearchRoot = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$ldapServer/$searchBase")
+    $searcher.Filter = "(sAMAccountName=testuser)"
+    $result = $searcher.FindOne()
+    
+    if ($result) {
+        Write-Host "LDAP connection successful"
+    } else {
+        Write-Host "User not found, but connection works"
+    }
+} catch {
+    Write-Host "LDAP connection failed: $($_.Exception.Message)"
+}
+
+### Configure service account for LDAP
+# Create dedicated service account in Active Directory
+# Grant "Log on as a service" right
+# Add to appropriate groups for file transfer access
+
+## Step 18: Performance Monitoring
+
+### Install Performance Toolkit
+choco install windows-adk-winpe -y
+
+### Configure Performance Counters
+# Monitor CPU, Memory, Disk I/O
+# Set up alerts for high resource usage
+
+### Create monitoring script
+@"
+# Performance monitoring script
+$cpuUsage = Get-Counter '\Processor(_Total)\% Processor Time' | Select-Object -ExpandProperty CounterSamples | Select-Object -ExpandProperty CookedValue
+$memoryUsage = Get-Counter '\Memory\Available MBytes' | Select-Object -ExpandProperty CounterSamples | Select-Object -ExpandProperty CookedValue
+$diskUsage = Get-Counter '\PhysicalDisk(_Total)\% Disk Time' | Select-Object -ExpandProperty CounterSamples | Select-Object -ExpandProperty CookedValue
+
+$date = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+$logEntry = "$date - CPU: $([math]::Round($cpuUsage, 2))%, Memory Available: $memoryUsage MB, Disk: $([math]::Round($diskUsage, 2))%"
+
+Write-Output $logEntry | Out-File -Append "C:\Logs\file-transfer\performance.log"
+
+# Alert if CPU usage is high
+if ($cpuUsage -gt 80) {
+    Write-EventLog -LogName "File Transfer System" -Source "FileTransferAPI" -EventId 1001 -EntryType Warning -Message "High CPU usage detected: $([math]::Round($cpuUsage, 2))%"
+}
+"@ | Out-File -FilePath "C:\inetpub\file-transfer\monitor.ps1" -Encoding UTF8
+
+### Schedule performance monitoring
+$monitorAction = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-File C:\inetpub\file-transfer\monitor.ps1"
+$monitorTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 365)
+$monitorSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+
+Register-ScheduledTask -TaskName "File Transfer Performance Monitor" -Action $monitorAction -Trigger $monitorTrigger -Settings $monitorSettings
+
+## Step 19: Backup Configuration
+
+### Create backup directories
+New-Item -ItemType Directory -Path "C:\Backups\file-transfer" -Force
+New-Item -ItemType Directory -Path "C:\Backups\file-transfer\database" -Force
+New-Item -ItemType Directory -Path "C:\Backups\file-transfer\files" -Force
+
+### Create backup script
+@"
+# File Transfer System Backup Script
+param(
+    [string]$BackupPath = "C:\Backups\file-transfer",
+    [int]$RetentionDays = 30
+)
+
+$date = Get-Date -Format "yyyyMMdd_HHmmss"
+$logFile = "C:\Logs\file-transfer\backup.log"
+
+Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Starting backup process" | Out-File -Append $logFile
+
+# Database backup (Docker)
+if (Get-Command docker -ErrorAction SilentlyContinue) {
+    $dbBackupPath = "$BackupPath\database\db_backup_$date.sql"
+    docker compose exec -T database mysqldump -u root -p$env:DB_ROOT_PASSWORD file_transfer > $dbBackupPath
+    Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Database backup completed: $dbBackupPath" | Out-File -Append $logFile
+}
+
+# Files backup
+$filesBackupPath = "$BackupPath\files\files_backup_$date.zip"
+Compress-Archive -Path "C:\inetpub\file-transfer\uploads\*" -DestinationPath $filesBackupPath -Force
+Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Files backup completed: $filesBackupPath" | Out-File -Append $logFile
+
+# Cleanup old backups
+$cutoffDate = (Get-Date).AddDays(-$RetentionDays)
+Get-ChildItem "$BackupPath\database" -Filter "*.sql" | Where-Object { $_.CreationTime -lt $cutoffDate } | Remove-Item -Force
+Get-ChildItem "$BackupPath\files" -Filter "*.zip" | Where-Object { $_.CreationTime -lt $cutoffDate } | Remove-Item -Force
+
+Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Backup process completed" | Out-File -Append $logFile
+"@ | Out-File -FilePath "C:\inetpub\file-transfer\backup.ps1" -Encoding UTF8
+
+### Schedule daily backups
+$backupAction = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-File C:\inetpub\file-transfer\backup.ps1"
+$backupTrigger = New-ScheduledTaskTrigger -Daily -At "1:00AM"
+$backupPrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+
+Register-ScheduledTask -TaskName "File Transfer Daily Backup" -Action $backupAction -Trigger $backupTrigger -Principal $backupPrincipal
+
+## Step 20: Security Hardening
+
+### Configure Windows Defender
+# Exclude application directories from real-time scanning for performance
+Add-MpPreference -ExclusionPath "C:\inetpub\file-transfer\uploads"
+Add-MpPreference -ExclusionPath "C:\inetpub\file-transfer\node_modules"
+
+### Configure User Account Control (UAC)
+# Ensure UAC is enabled for security
+
+### Configure Windows Updates
+# Enable automatic updates for security patches
+
+### Configure audit policies
+auditpol /set /category:"Logon/Logoff" /success:enable /failure:enable
+auditpol /set /category:"Object Access" /success:enable /failure:enable
+auditpol /set /category:"Policy Change" /success:enable /failure:enable
+
+## Step 21: Testing and Verification
+
+### Test application access
+# Open web browser and navigate to https://your-server.company.local
+# Verify SSL certificate is working
+# Test login with Active Directory credentials
+
+### Test API endpoints
+# Use PowerShell to test API
+Invoke-RestMethod -Uri "https://your-server.company.local/api/v1/system/health" -Method GET
+
+### Test file upload functionality
+# Login to the application
+# Upload a test file
+# Verify email notifications are sent
+# Test download functionality
+
+### Test LDAP authentication
+# Verify users can login with AD credentials
+# Test group-based access control
+# Verify admin users have appropriate permissions
+
+## Step 22: Documentation and Handover
+
+### Create system documentation
+# Document server configuration
+# Document Active Directory integration
+# Document backup and recovery procedures
+# Document troubleshooting steps
+
+### Create user documentation
+# User guide for file upload process
+# Administrator guide for system management
+# Troubleshooting guide for common issues
+
+## Troubleshooting
+
+### Common Issues and Solutions
+
+1. **Docker containers not starting**
+   - Check Docker Desktop is running
+   - Verify Hyper-V is enabled
+   - Check Windows version compatibility
+
+2. **IIS reverse proxy not working**
+   - Verify URL Rewrite module is installed
+   - Check web.config syntax
+   - Verify Application Request Routing is configured
+
+3. **Active Directory authentication failing**
+   - Test LDAP connectivity with PowerShell
+   - Verify service account permissions
+   - Check firewall rules for LDAP ports
+
+4. **File uploads failing**
+   - Check IIS request size limits
+   - Verify upload directory permissions
+   - Check disk space availability
+
+5. **SSL certificate issues**
+   - Verify certificate is properly installed
+   - Check certificate binding in IIS
+   - Verify certificate chain is complete
+
+### Log Locations
+- Application logs: C:\Logs\file-transfer\
+- IIS logs: C:\inetpub\logs\LogFiles\
+- Windows Event Logs: Event Viewer
+- Docker logs: docker compose logs
+
+### Useful PowerShell Commands
+- Restart IIS: iisreset
+- Check Windows services: Get-Service | Where-Object {$_.Name -like "*file*"}
+- Monitor performance: Get-Counter "\Processor(_Total)\% Processor Time"
+- Check disk space: Get-WmiObject -Class Win32_LogicalDisk
+- Test network connectivity: Test-NetConnection -ComputerName server -Port 443
+
+## Post-Installation Checklist
+
+- [ ] Application accessible via HTTPS
+- [ ] Active Directory authentication working
+- [ ] File upload and download functionality tested
+- [ ] Email notifications working
+- [ ] Admin interface accessible
+- [ ] SSL certificate properly configured
+- [ ] Firewall rules configured
+- [ ] Backup scripts scheduled
+- [ ] Monitoring configured
+- [ ] Performance baselines established
+- [ ] Documentation completed
+- [ ] User training conducted
+
+## Support and Maintenance
+
+### Regular Maintenance Tasks
+- Monitor system performance and resource usage
+- Review application and security logs
+- Test backup and recovery procedures
+- Update SSL certificates before expiration
+- Apply Windows security updates
+- Review and update Active Directory group memberships
+- Monitor disk space usage for uploads directory
+- Review and clean up old log files
+
+### Performance Optimization
+- Monitor IIS application pool performance
+- Optimize database queries and indexes
+- Configure appropriate caching headers
+- Monitor network bandwidth usage
+- Optimize file storage and cleanup processes
+
+Installation completed! Your File Transfer System should now be fully operational on Windows Server.
+
+## Additional Windows-Specific Features
+
+### Integration with Windows File Server
+- Configure network shares for additional storage
+- Integrate with Windows Storage Spaces
+- Configure file system permissions
+
+### Integration with Windows PKI
+- Use Windows Certificate Authority for SSL certificates
+- Configure certificate auto-enrollment
+- Implement certificate-based authentication
+
+### Integration with Windows Monitoring
+- Configure System Center Operations Manager (SCOM) monitoring
+- Set up Windows Performance Toolkit monitoring
+- Configure Windows Event Forwarding
+
+### High Availability Options
+- Configure Network Load Balancing (NLB)
+- Set up SQL Server Always On Availability Groups
+- Implement Windows Failover Clustering
+
+The File Transfer System is now fully deployed and configured for Windows Server environment with enterprise-grade security, monitoring, and maintenance capabilities.
