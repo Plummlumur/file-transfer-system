@@ -10,14 +10,16 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install --no-audit --no-fund
 
-# Copy public directory first (required for React build)
-COPY public/ ./public/
+# Create public directory and copy index.html manually
+RUN mkdir -p public
+COPY public/index.html ./public/index.html
+COPY public/manifest.json ./public/manifest.json
 
 # Copy source code
-COPY src/ ./src/
+COPY src ./src
 
-# Copy other necessary files
-COPY .env* ./
+# Copy environment file if it exists
+COPY .env.example ./
 
 # Set environment variables for React build
 ENV GENERATE_SOURCEMAP=false
