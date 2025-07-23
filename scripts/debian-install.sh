@@ -84,17 +84,20 @@ check_requirements() {
     
     case "$ID" in
         debian)
-            if [[ "$VERSION_ID" != "11" && "$VERSION_ID" != "12" ]]; then
-                log_warning "This script is tested on Debian 11/12. Your version: $VERSION_ID"
+            if [[ "$VERSION_ID" != "11" && "$VERSION_ID" != "12" && "$VERSION_ID" != "13" ]]; then
+                log_warning "This script is tested on Debian 11/12/13. Your version: $VERSION_ID"
             fi
             ;;
         ubuntu)
-            if [[ "${VERSION_ID%.*}" -lt 20 ]]; then
+            local ubuntu_version="${VERSION_ID%.*}"
+            if [[ "$ubuntu_version" -lt 20 ]]; then
                 error_exit "Ubuntu 20.04 or higher required. Your version: $VERSION_ID"
+            elif [[ "$ubuntu_version" -ge 20 ]]; then
+                log_info "Ubuntu $VERSION_ID detected - supported"
             fi
             ;;
         *)
-            log_warning "Unsupported OS: $ID. Continuing anyway..."
+            log_warning "Unsupported OS: $ID ($VERSION_ID). Continuing anyway..."
             ;;
     esac
     
@@ -163,9 +166,38 @@ interactive_config() {
 # Update system
 update_system() {
     log_info "Updating system packages..."
-    sudo apt update -qq
-    sudo apt upgrade -y -qq
-    sudo apt install -y curl wget git unzip software-properties-common apt-transport-https ca-certificates gnupg lsb-release build-essential
+    
+    # Update package lists
+    sudo apt update -qq || error_exit "Failed to update package lists"
+    
+    # Upgrade existing packages
+    sudo apt upgrade -y -qq || log_warning "Some packages failed to upgrade"
+    
+    # Install essential packages
+    local essential_packages=(
+        "curl"
+        "wget" 
+        "git"
+        "unzip"
+        "software-properties-common"
+        "apt-transport-https"
+        "ca-certificates"
+        "gnupg"
+        "lsb-release"
+        "build-essential"
+        "openssl"
+        "ufw"
+        "logrotate"
+    )
+    
+    log_info "Installing essential packages..."
+    for package in "${essential_packages[@]}"; do
+        if ! dpkg -l | grep -q "^ii  $package "; then
+            log_info "Installing $package..."
+            sudo apt install -y "$package" || log_warning "Failed to install $package"
+        fi
+    done
+    
     log_success "System packages updated"
 }
 
@@ -186,10 +218,19 @@ install_docker() {
     
     # Add Docker's official GPG key
     sudo mkdir -p /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    
+    # Detect OS and use appropriate repository
+    source /etc/os-release
+    local docker_os="debian"
+    if [[ "$ID" == "ubuntu" ]]; then
+        docker_os="ubuntu"
+    fi
+    
+    curl -fsSL https://download.docker.com/linux/${docker_os}/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    sudo chmod a+r /etc/apt/keyrings/docker.gpg
     
     # Add Docker repository
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${docker_os} $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
     
     # Install Docker
     sudo apt update -qq
@@ -208,14 +249,31 @@ install_docker() {
 
 # Install Node.js
 install_nodejs() {
-    if command -v node &> /dev/null && [[ $(node -v | cut -d'v' -f2 | cut -d'.' -f1) -ge 18 ]]; then
+    local required_version=20
+    if command -v node &> /dev/null && [[ $(node -v | cut -d'v' -f2 | cut -d'.' -f1) -ge $required_version ]]; then
         log_info "Node.js already installed: $(node --version)"
         return 0
     fi
     
-    log_info "Installing Node.js 18.x LTS..."
-    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+    log_info "Installing Node.js ${required_version}.x LTS..."
+    
+    # Remove old NodeSource repository if it exists
+    sudo rm -f /etc/apt/sources.list.d/nodesource.list
+    sudo rm -f /usr/share/keyrings/nodesource.gpg
+    
+    # Install Node.js using the new NodeSource setup
+    curl -fsSL https://deb.nodesource.com/setup_${required_version}.x | sudo -E bash -
     sudo apt install -y nodejs
+    
+    # Verify installation
+    if ! command -v node &> /dev/null; then
+        error_exit "Node.js installation failed"
+    fi
+    
+    local installed_version=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+    if [[ $installed_version -lt $required_version ]]; then
+        log_warning "Installed Node.js version ($installed_version) is older than recommended ($required_version)"
+    fi
     
     log_success "Node.js installed: $(node --version)"
     log_success "npm installed: $(npm --version)"
@@ -234,24 +292,58 @@ install_mysql() {
     fi
     
     log_info "Installing MySQL Server..."
-    sudo apt install -y mysql-server
+    
+    # Set MySQL root password before installation to avoid interactive prompts
+    local mysql_root_password="TempRootPass123!"
+    sudo debconf-set-selections <<< "mysql-server mysql-server/root_password password $mysql_root_password"
+    sudo debconf-set-selections <<< "mysql-server mysql-server/root_password_again password $mysql_root_password"
+    
+    # Install MySQL - try different package names for different versions
+    if sudo apt install -y mysql-server-8.0 2>/dev/null; then
+        log_info "Installed mysql-server-8.0"
+    elif sudo apt install -y mysql-server 2>/dev/null; then
+        log_info "Installed mysql-server"
+    elif sudo apt install -y default-mysql-server 2>/dev/null; then
+        log_info "Installed default-mysql-server"
+    else
+        error_exit "Failed to install MySQL server. Please install manually."
+    fi
+    
+    # Start MySQL service
+    sudo systemctl start mysql
+    sudo systemctl enable mysql
+    
+    # Wait for MySQL to be ready
+    log_info "Waiting for MySQL to start..."
+    local retries=10
+    while [[ $retries -gt 0 ]]; do
+        if sudo mysql -u root -p"$mysql_root_password" -e "SELECT 1;" &>/dev/null; then
+            break
+        fi
+        log_info "MySQL not ready yet, waiting... ($retries retries left)"
+        sleep 3
+        ((retries--))
+    done
+    
+    if [[ $retries -eq 0 ]]; then
+        error_exit "MySQL failed to start properly"
+    fi
     
     # Secure MySQL installation
     log_info "Securing MySQL installation..."
-    sudo mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'TempRootPass123!';"
-    sudo mysql -u root -pTempRootPass123! -e "DELETE FROM mysql.user WHERE User='';"
-    sudo mysql -u root -pTempRootPass123! -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');"
-    sudo mysql -u root -pTempRootPass123! -e "DROP DATABASE IF EXISTS test;"
-    sudo mysql -u root -pTempRootPass123! -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';"
-    sudo mysql -u root -pTempRootPass123! -e "FLUSH PRIVILEGES;"
+    sudo mysql -u root -p"$mysql_root_password" -e "DELETE FROM mysql.user WHERE User='';" 2>/dev/null || true
+    sudo mysql -u root -p"$mysql_root_password" -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>/dev/null || true
+    sudo mysql -u root -p"$mysql_root_password" -e "DROP DATABASE IF EXISTS test;" 2>/dev/null || true
+    sudo mysql -u root -p"$mysql_root_password" -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" 2>/dev/null || true
+    sudo mysql -u root -p"$mysql_root_password" -e "FLUSH PRIVILEGES;" 2>/dev/null || true
     
     # Create database and user
     log_info "Creating database and user..."
     local db_password=$(openssl rand -hex 32)
-    sudo mysql -u root -pTempRootPass123! -e "CREATE DATABASE file_transfer CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-    sudo mysql -u root -pTempRootPass123! -e "CREATE USER 'fileuser'@'localhost' IDENTIFIED BY '$db_password';"
-    sudo mysql -u root -pTempRootPass123! -e "GRANT ALL PRIVILEGES ON file_transfer.* TO 'fileuser'@'localhost';"
-    sudo mysql -u root -pTempRootPass123! -e "FLUSH PRIVILEGES;"
+    sudo mysql -u root -p"$mysql_root_password" -e "CREATE DATABASE file_transfer CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    sudo mysql -u root -p"$mysql_root_password" -e "CREATE USER 'fileuser'@'localhost' IDENTIFIED BY '$db_password';"
+    sudo mysql -u root -p"$mysql_root_password" -e "GRANT ALL PRIVILEGES ON file_transfer.* TO 'fileuser'@'localhost';"
+    sudo mysql -u root -p"$mysql_root_password" -e "FLUSH PRIVILEGES;"
     
     # Save credentials
     echo "DB_PASSWORD=$db_password" >> "$APP_DIR/.env.production"
