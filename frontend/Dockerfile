@@ -13,6 +13,9 @@ RUN npm install --no-audit --no-fund
 # Copy all source code and assets
 COPY . .
 
+# Debug: List files to verify copy worked
+RUN ls -la && ls -la public/
+
 # Build the application
 RUN npm run build
 
