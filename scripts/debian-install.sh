@@ -247,7 +247,7 @@ install_mysql() {
     
     # Create database and user
     log_info "Creating database and user..."
-    local db_password=$(openssl rand -base64 32)
+    local db_password=$(openssl rand -hex 32)
     sudo mysql -u root -pTempRootPass123! -e "CREATE DATABASE file_transfer CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
     sudo mysql -u root -pTempRootPass123! -e "CREATE USER 'fileuser'@'localhost' IDENTIFIED BY '$db_password';"
     sudo mysql -u root -pTempRootPass123! -e "GRANT ALL PRIVILEGES ON file_transfer.* TO 'fileuser'@'localhost';"
@@ -318,16 +318,16 @@ deploy_application() {
         log_info "Creating Docker environment file..."
         cat > "$APP_DIR/.env" << EOF
 # Database Configuration
-DB_ROOT_PASSWORD=$(openssl rand -base64 32)
+DB_ROOT_PASSWORD=$(openssl rand -hex 32)
 DB_NAME=file_transfer
 DB_USER=fileuser
-DB_PASSWORD=$(openssl rand -base64 32)
+DB_PASSWORD=$(openssl rand -hex 32)
 
 # JWT Configuration
-JWT_SECRET=$(openssl rand -base64 64)
+JWT_SECRET=$(openssl rand -hex 64)
 
 # Redis Configuration
-REDIS_PASSWORD=$(openssl rand -base64 32)
+REDIS_PASSWORD=$(openssl rand -hex 32)
 
 # LDAP Configuration (CONFIGURE THESE)
 LDAP_URL=ldap://your-ldap-server:389
