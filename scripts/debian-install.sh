@@ -483,7 +483,16 @@ install_docker_stack() {
         error_exit "Cannot connect to Docker daemon. Please ensure Docker is running and user has proper permissions."
     fi
     
-    ${docker_cmd} compose up -d --build
+    # Force a clean build to avoid cache issues
+    log_info "Cleaning Docker build cache..."
+    ${docker_cmd} compose down --volumes --remove-orphans 2>/dev/null || true
+    ${docker_cmd} system prune -f --filter "until=1h" 2>/dev/null || true
+    
+    log_info "Building containers with no cache..."
+    ${docker_cmd} compose build --no-cache --pull
+    
+    log_info "Starting containers..."
+    ${docker_cmd} compose up -d
     
     # Wait for services to be ready
     log_info "Waiting for services to start..."

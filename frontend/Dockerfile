@@ -10,15 +10,18 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install --no-audit --no-fund
 
-# Debug: Check what files are available in build context
-COPY . ./temp-debug/
-RUN echo "=== Files in build context ===" && ls -la temp-debug/ && echo "=== End of build context ===" && rm -rf temp-debug/
+# Copy public directory first (required for React build)
+COPY public/ ./public/
 
-# Copy all source code and assets
-COPY . .
+# Copy source code
+COPY src/ ./src/
 
-# Debug: List files to verify copy worked
-RUN echo "=== Files after copy ===" && ls -la && echo "=== Checking for public directory ===" && if [ -d public ]; then ls -la public/; else echo "PUBLIC DIRECTORY NOT FOUND"; fi
+# Copy other necessary files
+COPY .env* ./
+
+# Set environment variables for React build
+ENV GENERATE_SOURCEMAP=false
+ENV PUBLIC_URL=.
 
 # Build the application
 RUN npm run build
