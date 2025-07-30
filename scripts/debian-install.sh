@@ -23,6 +23,8 @@ DOMAIN=""
 EMAIL=""
 INSTALL_TYPE=""
 USE_DOCKER="true"
+SSL_TYPE=""
+USE_SELF_SIGNED="false"
 
 # Logging
 LOG_FILE="/tmp/file-transfer-install.log"
@@ -126,34 +128,79 @@ interactive_config() {
     
     # Installation type
     echo "Select installation type:"
-    echo "1) Docker (Recommended - easier to manage and update)"
-    echo "2) Manual (Direct installation with PM2)"
-    read -p "Choice [1-2]: " choice
+    echo "1) Production (Manual installation with system services)"
+    echo "2) Docker (Containerized installation)"
+    echo "3) Local Development (Docker with development settings)"
+    read -p "Choice [1-3]: " choice
     
     case $choice in
-        1) USE_DOCKER="true"; INSTALL_TYPE="docker" ;;
-        2) USE_DOCKER="false"; INSTALL_TYPE="manual" ;;
+        1) USE_DOCKER="false"; INSTALL_TYPE="production" ;;
+        2) USE_DOCKER="true"; INSTALL_TYPE="docker" ;;
+        3) USE_DOCKER="true"; INSTALL_TYPE="development" ;;
         *) log_warning "Invalid choice, defaulting to Docker"; USE_DOCKER="true"; INSTALL_TYPE="docker" ;;
     esac
     
     # Domain configuration
-    read -p "Enter your domain name (e.g., files.company.com): " DOMAIN
-    if [[ -z "$DOMAIN" ]]; then
-        error_exit "Domain name is required"
+    if [[ "$INSTALL_TYPE" == "development" ]]; then
+        log_info "Development mode: Using localhost as domain"
+        DOMAIN="localhost"
+    else
+        read -p "Enter your domain name (e.g., files.company.com): " DOMAIN
+        if [[ -z "$DOMAIN" ]]; then
+            error_exit "Domain name is required"
+        fi
     fi
     
-    # Email for SSL certificate
-    read -p "Enter email for SSL certificate (Let's Encrypt): " EMAIL
-    if [[ -z "$EMAIL" ]]; then
-        log_warning "No email provided. SSL setup will be manual"
+    # SSL certificate configuration
+    echo ""
+    echo "SSL Certificate Configuration:"
+    if [[ "$INSTALL_TYPE" == "development" ]]; then
+        echo "1) Self-signed certificate (for local HTTPS testing)"
+        echo "2) HTTP only (no SSL)"
+        read -p "Choice [1-2]: " ssl_choice
+        
+        case $ssl_choice in
+            1) SSL_TYPE="self-signed"; USE_SELF_SIGNED="true" ;;
+            2) SSL_TYPE="none"; USE_SELF_SIGNED="false" ;;
+            *) log_warning "Invalid choice, defaulting to self-signed"; SSL_TYPE="self-signed"; USE_SELF_SIGNED="true" ;;
+        esac
+    else
+        echo "1) Let's Encrypt certificate (requires public domain)"
+        echo "2) Self-signed certificate (for internal/test use)"
+        echo "3) Manual SSL setup (I'll configure SSL later)"
+        read -p "Choice [1-3]: " ssl_choice
+        
+        case $ssl_choice in
+            1) 
+                SSL_TYPE="letsencrypt"
+                read -p "Enter email for Let's Encrypt certificate: " EMAIL
+                if [[ -z "$EMAIL" ]]; then
+                    log_warning "Email required for Let's Encrypt. Falling back to self-signed."
+                    SSL_TYPE="self-signed"
+                    USE_SELF_SIGNED="true"
+                fi
+                ;;
+            2) SSL_TYPE="self-signed"; USE_SELF_SIGNED="true" ;;
+            3) SSL_TYPE="manual" ;;
+            *) log_warning "Invalid choice, defaulting to self-signed"; SSL_TYPE="self-signed"; USE_SELF_SIGNED="true" ;;
+        esac
     fi
     
     # Confirmation
     echo -e "\n${YELLOW}Configuration Summary:${NC}"
     echo "- Installation Type: $INSTALL_TYPE"
     echo "- Domain: $DOMAIN"
-    echo "- Email: ${EMAIL:-"Not provided"}"
+    echo "- SSL Certificate: $SSL_TYPE"
+    if [[ "$SSL_TYPE" == "letsencrypt" ]]; then
+        echo "- Email: $EMAIL"
+    fi
     echo "- Installation Directory: $APP_DIR"
+    if [[ "$INSTALL_TYPE" == "development" ]]; then
+        echo "- HTTP URL: http://localhost:8081"
+        if [[ "$USE_SELF_SIGNED" == "true" ]]; then
+            echo "- HTTPS URL: https://localhost:8443"
+        fi
+    fi
     echo ""
     
     read -p "Continue with installation? [y/N]: " confirm
@@ -403,6 +450,23 @@ deploy_application() {
     # Create environment files
     if [[ ! -f "$APP_DIR/.env" ]]; then
         log_info "Creating Docker environment file..."
+        
+        # Determine frontend URL based on installation type and SSL
+        local frontend_url
+        if [[ "$INSTALL_TYPE" == "development" ]]; then
+            if [[ "$USE_SELF_SIGNED" == "true" ]]; then
+                frontend_url="https://localhost:8443"
+            else
+                frontend_url="http://localhost:8081"
+            fi
+        else
+            if [[ "$SSL_TYPE" == "none" ]]; then
+                frontend_url="http://$DOMAIN"
+            else
+                frontend_url="https://$DOMAIN"
+            fi
+        fi
+        
         cat > "$APP_DIR/.env" << EOF
 # Database Configuration
 DB_ROOT_PASSWORD=$(openssl rand -hex 32)
@@ -428,7 +492,8 @@ SMTP_USER=noreply@company.com
 SMTP_PASSWORD=smtp-password
 
 # Application Configuration
-FRONTEND_URL=https://$DOMAIN
+FRONTEND_URL=$frontend_url
+NODE_ENV=$(if [[ "$INSTALL_TYPE" == "development" ]]; then echo "development"; else echo "production"; fi)
 EOF
     fi
     
@@ -442,14 +507,36 @@ EOF
         sed -i "s|DB_NAME=.*|DB_NAME=file_transfer|" "$APP_DIR/backend/.env"
         sed -i "s|DB_USER=.*|DB_USER=fileuser|" "$APP_DIR/backend/.env"
         sed -i "s|NODE_ENV=.*|NODE_ENV=production|" "$APP_DIR/backend/.env"
-        sed -i "s|FRONTEND_URL=.*|FRONTEND_URL=https://$DOMAIN|" "$APP_DIR/backend/.env"
+        sed -i "s|FRONTEND_URL=.*|FRONTEND_URL=$frontend_url|" "$APP_DIR/backend/.env"
     fi
     
     # Frontend environment
     if [[ ! -f "$APP_DIR/frontend/.env" ]]; then
         log_info "Creating frontend environment file..."
         cp "$APP_DIR/frontend/.env.example" "$APP_DIR/frontend/.env"
-        sed -i "s|REACT_APP_API_URL=.*|REACT_APP_API_URL=https://$DOMAIN/api/v1|" "$APP_DIR/frontend/.env"
+        # Determine API URL based on installation type
+        local api_url
+        if [[ "$INSTALL_TYPE" == "development" ]]; then
+            api_url="http://localhost:8080/api/v1"
+        else
+            if [[ "$SSL_TYPE" == "none" ]]; then
+                api_url="http://$DOMAIN/api/v1"
+            else
+                api_url="https://$DOMAIN/api/v1"
+            fi
+        fi
+        sed -i "s|REACT_APP_API_URL=.*|REACT_APP_API_URL=$api_url|" "$APP_DIR/frontend/.env"
+    fi
+    
+    # Update docker-compose.yml for development mode
+    if [[ "$INSTALL_TYPE" == "development" ]]; then
+        log_info "Configuring Docker Compose for development mode..."
+        
+        # Update frontend ports for development (8081:80, 8443:443)
+        sed -i 's/- "80:80"/- "8081:80"/' "$APP_DIR/docker-compose.yml"
+        sed -i 's/- "443:443"/- "8443:443"/' "$APP_DIR/docker-compose.yml"
+        
+        log_info "Development mode ports configured: HTTP=8081, HTTPS=8443"
     fi
     
     log_success "Application files deployed"
@@ -660,15 +747,21 @@ server {
 }
 EOF
     
-    # Generate self-signed certificate as fallback
-    if [[ ! -f /etc/ssl/certs/file-transfer-selfsigned.crt ]]; then
-        log_info "Generating self-signed SSL certificate as fallback..."
-        sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-            -keyout /etc/ssl/private/file-transfer-selfsigned.key \
-            -out /etc/ssl/certs/file-transfer-selfsigned.crt \
-            -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=$DOMAIN"
-        sudo chmod 600 /etc/ssl/private/file-transfer-selfsigned.key
-        sudo chmod 644 /etc/ssl/certs/file-transfer-selfsigned.crt
+    # Configure SSL certificates based on installation type
+    if [[ "$USE_SELF_SIGNED" == "true" && "$USE_DOCKER" == "true" ]]; then
+        # For Docker with self-signed certificates, certificates are generated in ssl directory
+        log_info "Using self-signed certificates from ssl directory for Docker"
+    elif [[ "$SSL_TYPE" == "letsencrypt" || "$SSL_TYPE" == "self-signed" ]]; then
+        # Generate fallback self-signed certificate for non-Docker installations
+        if [[ ! -f /etc/ssl/certs/file-transfer-selfsigned.crt ]]; then
+            log_info "Generating fallback self-signed SSL certificate..."
+            sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+                -keyout /etc/ssl/private/file-transfer-selfsigned.key \
+                -out /etc/ssl/certs/file-transfer-selfsigned.crt \
+                -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=$DOMAIN"
+            sudo chmod 600 /etc/ssl/private/file-transfer-selfsigned.key
+            sudo chmod 644 /etc/ssl/certs/file-transfer-selfsigned.crt
+        fi
     fi
     
     # Enable the site
@@ -684,8 +777,110 @@ EOF
     log_success "Nginx configuration completed"
 }
 
-# Setup SSL with Let's Encrypt
+# Generate self-signed SSL certificates
+generate_self_signed_cert() {
+    log_info "Generating self-signed SSL certificate for domain: $DOMAIN"
+    
+    local ssl_dir="$APP_DIR/nginx/ssl"
+    mkdir -p "$ssl_dir"
+    
+    # Create certificate configuration
+    cat > "$ssl_dir/cert.conf" << EOF
+[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+distinguished_name = dn
+req_extensions = v3_req
+
+[dn]
+C=DE
+ST=Local
+L=Local
+O=File Transfer System
+OU=Development
+CN=$DOMAIN
+
+[v3_req]
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = $DOMAIN
+DNS.2 = localhost
+DNS.3 = *.localhost
+IP.1 = 127.0.0.1
+IP.2 = ::1
+EOF
+
+    # Generate private key
+    openssl genrsa -out "$ssl_dir/key.pem" 2048
+
+    # Generate certificate signing request
+    openssl req -new -key "$ssl_dir/key.pem" -out "$ssl_dir/cert.csr" -config "$ssl_dir/cert.conf"
+
+    # Generate self-signed certificate
+    openssl x509 -req -in "$ssl_dir/cert.csr" -signkey "$ssl_dir/key.pem" -out "$ssl_dir/cert.pem" \
+        -days 365 -extensions v3_req -extfile "$ssl_dir/cert.conf"
+
+    # Set proper permissions
+    chmod 600 "$ssl_dir/key.pem"
+    chmod 644 "$ssl_dir/cert.pem"
+    
+    # Clean up temporary files
+    rm -f "$ssl_dir/cert.csr" "$ssl_dir/cert.conf"
+    
+    # Create SSL parameters configuration
+    cat > "$ssl_dir/ssl-params.conf" << 'EOF'
+# SSL Configuration for File Transfer System
+ssl_protocols TLSv1.2 TLSv1.3;
+ssl_prefer_server_ciphers off;
+ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+
+# SSL session cache
+ssl_session_cache shared:SSL:10m;
+ssl_session_timeout 10m;
+ssl_session_tickets off;
+
+# Security headers
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+add_header X-Frame-Options "SAMEORIGIN" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-XSS-Protection "1; mode=block" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+EOF
+    
+    log_success "Self-signed SSL certificate generated successfully"
+    log_info "Certificate files created:"
+    log_info "  - Private Key: $ssl_dir/key.pem"
+    log_info "  - Certificate: $ssl_dir/cert.pem"
+    log_info "  - SSL Config: $ssl_dir/ssl-params.conf"
+}
+
+# Setup SSL with Let's Encrypt or self-signed certificates
 setup_ssl() {
+    case "$SSL_TYPE" in
+        "letsencrypt")
+            setup_letsencrypt_ssl
+            ;;
+        "self-signed")
+            generate_self_signed_cert
+            ;;
+        "manual")
+            log_info "SSL setup skipped. You can configure SSL manually later."
+            ;;
+        "none")
+            log_info "SSL disabled. Application will use HTTP only."
+            ;;
+        *)
+            log_warning "Unknown SSL type: $SSL_TYPE. Skipping SSL setup."
+            ;;
+    esac
+}
+
+# Setup SSL with Let's Encrypt
+setup_letsencrypt_ssl() {
     if [[ -z "$EMAIL" ]]; then
         log_warning "No email provided, skipping automatic SSL setup"
         log_info "You can manually setup SSL later with: sudo certbot --nginx -d $DOMAIN"
@@ -870,12 +1065,31 @@ print_final_instructions() {
     echo -e "\n${GREEN}=== Installation Complete ===${NC}\n"
     
     echo -e "${BLUE}Application URLs:${NC}"
-    echo "- HTTP: http://$DOMAIN"
-    if [[ -n "$EMAIL" ]]; then
-        echo "- HTTPS: https://$DOMAIN"
+    if [[ "$INSTALL_TYPE" == "development" ]]; then
+        echo "- HTTP: http://localhost:8081"
+        if [[ "$USE_SELF_SIGNED" == "true" ]]; then
+            echo "- HTTPS: https://localhost:8443 (self-signed certificate)"
+            log_warning "  ⚠️  Your browser will show a security warning for the self-signed certificate."
+            log_info "     Click 'Advanced' → 'Proceed to localhost' to accept it."
+        fi
+        echo "- API: http://localhost:8080"
+        echo "- Health Check: http://localhost:8081/health"
+        echo "- API Health: http://localhost:8080/api/v1/system/health"
+    else
+        if [[ "$SSL_TYPE" == "none" ]]; then
+            echo "- HTTP: http://$DOMAIN"
+            echo "- Health Check: http://$DOMAIN/health"
+            echo "- API Health: http://$DOMAIN/api/v1/system/health"
+        else
+            echo "- HTTP: http://$DOMAIN"
+            echo "- HTTPS: https://$DOMAIN"
+            if [[ "$SSL_TYPE" == "self-signed" ]]; then
+                log_warning "  ⚠️  Using self-signed certificate - browsers will show security warnings"
+            fi
+            echo "- Health Check: https://$DOMAIN/health"
+            echo "- API Health: https://$DOMAIN/api/v1/system/health"
+        fi
     fi
-    echo "- Health Check: http://$DOMAIN/health"
-    echo "- API Health: http://$DOMAIN/api/v1/system/health"
     
     echo -e "\n${BLUE}Configuration Files:${NC}"
     echo "- Application: $APP_DIR"
@@ -924,7 +1138,8 @@ print_final_instructions() {
 main() {
     echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║           File Transfer System - Debian Installer           ║${NC}"
-    echo -e "${BLUE}║                     Version 1.0.0                           ║${NC}"
+    echo -e "${BLUE}║              Production | Docker | Development               ║${NC}"
+    echo -e "${BLUE}║                     Version 2.0.0                           ║${NC}"
     echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${NC}\n"
     
     log_info "Starting installation at $(date)"
@@ -968,6 +1183,57 @@ main() {
 
 # Trap errors
 trap 'error_exit "Installation interrupted"' INT TERM
+
+# Show help
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat << EOF
+File Transfer System - Debian Installer
+
+This script provides comprehensive installation options for different environments:
+
+Installation Types:
+  1) Production     - Manual installation with system services (PM2, Nginx)
+  2) Docker         - Containerized installation for production
+  3) Development    - Docker with development settings and optional HTTPS
+
+SSL Certificate Options:
+  • Let's Encrypt   - Automatic certificates for public domains
+  • Self-signed     - Generated certificates for local/internal use
+  • Manual          - Configure SSL manually later
+  • None            - HTTP only (not recommended for production)
+
+Development Mode Features:
+  • Uses localhost domain automatically
+  • Configures ports 8081 (HTTP) and 8443 (HTTPS)
+  • Optional self-signed certificates for HTTPS testing
+  • Development environment variables
+
+Usage: $0 [--help]
+
+Requirements:
+  • Debian 11/12/13 or Ubuntu 20.04+
+  • 4GB+ RAM (recommended)
+  • 20GB+ free disk space
+  • Internet connection
+  • Sudo privileges
+
+The installer will:
+  1. Check system requirements
+  2. Install required packages (Docker, Node.js, etc.)
+  3. Set up the application environment
+  4. Configure SSL certificates (if selected)
+  5. Deploy and start the application
+  6. Run database migrations
+  7. Configure system services
+
+Examples:
+  $0                    # Interactive installation
+  $0 --help           # Show this help
+
+For more information, see: https://github.com/Plummlumur/file-transfer-system
+EOF
+    exit 0
+fi
 
 # Run main function
 main "$@"
