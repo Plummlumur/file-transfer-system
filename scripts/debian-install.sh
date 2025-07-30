@@ -598,10 +598,42 @@ install_docker_stack() {
         error_exit "Docker services failed to start properly"
     fi
     
+    # Wait for backend service to be fully ready
+    log_info "Waiting for backend service to be ready..."
+    local backend_retries=20
+    while [[ $backend_retries -gt 0 ]]; do
+        if ${docker_cmd} compose exec -T backend echo "Backend ready" &>/dev/null; then
+            log_success "Backend service is ready"
+            break
+        fi
+        log_info "Backend not ready yet, waiting... ($backend_retries retries left)"
+        sleep 5
+        ((backend_retries--))
+    done
+    
+    if [[ $backend_retries -eq 0 ]]; then
+        log_warning "Backend service not responding, but continuing with migrations"
+    fi
+    
     # Run database migrations
     log_info "Running database migrations..."
-    ${docker_cmd} compose exec -T backend npm run migrate || log_warning "Migration failed - database may need manual setup"
-    ${docker_cmd} compose exec -T backend npm run seed || log_warning "Seeding failed - continuing anyway"
+    if ${docker_cmd} compose exec -T backend npm run migrate; then
+        log_success "Database migrations completed successfully"
+    else
+        log_warning "Migration failed - database may need manual setup"
+        log_info "You can manually run migrations later with:"
+        log_info "  ${docker_cmd} compose exec backend npm run migrate"
+    fi
+    
+    # Seed database
+    log_info "Seeding database with initial data..."
+    if ${docker_cmd} compose exec -T backend npm run seed; then
+        log_success "Database seeding completed successfully"
+    else
+        log_warning "Seeding failed - continuing anyway"
+        log_info "You can manually run seeding later with:"
+        log_info "  ${docker_cmd} compose exec backend npm run seed"
+    fi
     
     log_success "Docker stack installation completed"
 }
@@ -670,6 +702,11 @@ EOF
 
 # Configure Nginx
 configure_nginx() {
+    if [[ "$USE_DOCKER" == "true" ]]; then
+        log_info "Skipping system nginx configuration (using containerized nginx)"
+        return 0
+    fi
+    
     log_info "Configuring Nginx reverse proxy..."
     
     # Create Nginx configuration
@@ -860,6 +897,21 @@ EOF
 
 # Setup SSL with Let's Encrypt or self-signed certificates
 setup_ssl() {
+    if [[ "$USE_DOCKER" == "true" ]]; then
+        case "$SSL_TYPE" in
+            "self-signed")
+                generate_self_signed_cert
+                ;;
+            "none")
+                log_info "SSL disabled for Docker installation. Application will use HTTP only."
+                ;;
+            *)
+                log_info "Docker installation: SSL certificates handled by container configuration."
+                ;;
+        esac
+        return 0
+    fi
+    
     case "$SSL_TYPE" in
         "letsencrypt")
             setup_letsencrypt_ssl
@@ -911,6 +963,12 @@ setup_letsencrypt_ssl() {
 
 # Configure firewall
 setup_firewall() {
+    if [[ "$USE_DOCKER" == "true" ]]; then
+        log_info "Skipping firewall configuration for Docker installation"
+        log_info "Docker manages its own network rules. Configure host firewall separately if needed."
+        return 0
+    fi
+    
     log_info "Configuring firewall..."
     
     # Install and configure UFW
@@ -931,6 +989,12 @@ setup_firewall() {
 
 # Setup monitoring and maintenance
 setup_monitoring() {
+    if [[ "$USE_DOCKER" == "true" ]]; then
+        log_info "Skipping system monitoring setup for Docker installation"
+        log_info "Use 'docker compose logs' and 'docker compose ps' for monitoring"
+        return 0
+    fi
+    
     log_info "Setting up monitoring and maintenance..."
     
     # Create maintenance script
