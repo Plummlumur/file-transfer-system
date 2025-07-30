@@ -145,9 +145,9 @@ COPY --from=builder /app/build /usr/share/nginx/html
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf
 
-# Create nginx user and set permissions
-RUN addgroup -g 1001 -S nginx && \
-    adduser -S nginx -u 1001 -G nginx && \
+# Ensure nginx user exists and set permissions
+RUN (addgroup -g 1001 -S nginx 2>/dev/null || true) && \
+    (adduser -S nginx -u 1001 -G nginx 2>/dev/null || true) && \
     chown -R nginx:nginx /usr/share/nginx/html && \
     chown -R nginx:nginx /var/cache/nginx && \
     chown -R nginx:nginx /var/log/nginx && \
