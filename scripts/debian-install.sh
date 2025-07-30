@@ -819,10 +819,10 @@ generate_self_signed_cert() {
     log_info "Generating self-signed SSL certificate for domain: $DOMAIN"
     
     local ssl_dir="$APP_DIR/nginx/ssl"
-    mkdir -p "$ssl_dir"
+    sudo mkdir -p "$ssl_dir"
     
     # Create certificate configuration
-    cat > "$ssl_dir/cert.conf" << EOF
+    sudo tee "$ssl_dir/cert.conf" > /dev/null << EOF
 [req]
 default_bits = 2048
 prompt = no
@@ -852,24 +852,20 @@ IP.2 = ::1
 EOF
 
     # Generate private key
-    openssl genrsa -out "$ssl_dir/key.pem" 2048
+    sudo openssl genrsa -out "$ssl_dir/key.pem" 2048
 
     # Generate certificate signing request
-    openssl req -new -key "$ssl_dir/key.pem" -out "$ssl_dir/cert.csr" -config "$ssl_dir/cert.conf"
+    sudo openssl req -new -key "$ssl_dir/key.pem" -out "$ssl_dir/cert.csr" -config "$ssl_dir/cert.conf"
 
     # Generate self-signed certificate
-    openssl x509 -req -in "$ssl_dir/cert.csr" -signkey "$ssl_dir/key.pem" -out "$ssl_dir/cert.pem" \
+    sudo openssl x509 -req -in "$ssl_dir/cert.csr" -signkey "$ssl_dir/key.pem" -out "$ssl_dir/cert.pem" \
         -days 365 -extensions v3_req -extfile "$ssl_dir/cert.conf"
 
-    # Set proper permissions
-    chmod 600 "$ssl_dir/key.pem"
-    chmod 644 "$ssl_dir/cert.pem"
-    
     # Clean up temporary files
-    rm -f "$ssl_dir/cert.csr" "$ssl_dir/cert.conf"
+    sudo rm -f "$ssl_dir/cert.csr" "$ssl_dir/cert.conf"
     
     # Create SSL parameters configuration
-    cat > "$ssl_dir/ssl-params.conf" << 'EOF'
+    sudo tee "$ssl_dir/ssl-params.conf" > /dev/null << 'EOF'
 # SSL Configuration for File Transfer System
 ssl_protocols TLSv1.2 TLSv1.3;
 ssl_prefer_server_ciphers off;
@@ -887,6 +883,16 @@ add_header X-Content-Type-Options "nosniff" always;
 add_header X-XSS-Protection "1; mode=block" always;
 add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 EOF
+
+    # Set proper permissions and ownership
+    sudo chmod 600 "$ssl_dir/key.pem"
+    sudo chmod 644 "$ssl_dir/cert.pem"
+    sudo chmod 644 "$ssl_dir/ssl-params.conf"
+    
+    # Set ownership for Docker or regular user
+    if [[ "$USE_DOCKER" == "true" ]]; then
+        sudo chown -R $USER:$USER "$ssl_dir"
+    fi
     
     log_success "Self-signed SSL certificate generated successfully"
     log_info "Certificate files created:"
