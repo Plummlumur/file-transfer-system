@@ -1097,7 +1097,15 @@ verify_installation() {
         cd "$APP_DIR"
         if ! ${docker_cmd} compose ps | grep -q "Up"; then
             log_error "Docker services are not running properly"
+            log_info "=== Docker Compose Status ==="
             ${docker_cmd} compose ps
+            log_info "=== Checking service logs for diagnostics ==="
+            log_info "--- Backend Logs (last 30 lines) ---"
+            ${docker_cmd} compose logs --tail=30 backend || true
+            log_info "--- Frontend Logs (last 30 lines) ---"
+            ${docker_cmd} compose logs --tail=30 frontend || true
+            log_info "--- Database Logs (last 10 lines) ---"
+            ${docker_cmd} compose logs --tail=10 database || true
             return 1
         fi
     else
@@ -1111,11 +1119,25 @@ verify_installation() {
         fi
     fi
     
-    # Test HTTP endpoints
-    if curl -f -s "http://localhost/health" > /dev/null; then
-        log_success "Health check endpoint responding"
+    # Test HTTP endpoints based on installation type
+    local health_url
+    if [[ "$INSTALL_TYPE" == "development" ]]; then
+        health_url="http://localhost:8081/health"
     else
-        log_warning "Health check endpoint not responding"
+        health_url="http://localhost/health"
+    fi
+    
+    if curl -f -s "$health_url" > /dev/null; then
+        log_success "Health check endpoint responding at $health_url"
+    else
+        log_warning "Health check endpoint not responding at $health_url"
+        # Try backend API health check as fallback
+        local api_health_url="http://localhost:8080/api/v1/system/health"
+        if curl -f -s "$api_health_url" > /dev/null; then
+            log_success "Backend API health check responding at $api_health_url"
+        else
+            log_warning "Backend API health check also not responding at $api_health_url"
+        fi
     fi
     
     # Check SSL if configured
@@ -1128,6 +1150,42 @@ verify_installation() {
     fi
     
     log_success "Installation verification completed"
+}
+
+# Show troubleshooting information
+show_troubleshooting_info() {
+    if [[ "$USE_DOCKER" == "true" ]]; then
+        echo -e "\n${YELLOW}=== Troubleshooting Docker Installation ===${NC}"
+        echo -e "${BLUE}Common Docker Commands:${NC}"
+        echo "- Check container status: docker compose ps"
+        echo "- View all logs: docker compose logs"
+        echo "- View backend logs: docker compose logs backend"
+        echo "- View frontend logs: docker compose logs frontend"
+        echo "- View database logs: docker compose logs database"
+        echo "- Restart services: docker compose restart"
+        echo "- Stop services: docker compose down"
+        echo "- Start services: docker compose up -d"
+        echo ""
+        echo -e "${BLUE}Manual Database Setup:${NC}"
+        echo "- Run migrations: docker compose exec backend npm run migrate"
+        echo "- Seed database: docker compose exec backend npm run seed"
+        echo ""
+        echo -e "${BLUE}Container Issues:${NC}"
+        echo "- If containers keep restarting, check environment variables in .env file"
+        echo "- Ensure database connection settings are correct"
+        echo "- Check if all required environment variables are set"
+        echo ""
+        echo -e "${BLUE}Port Issues:${NC}"
+        if [[ "$INSTALL_TYPE" == "development" ]]; then
+            echo "- Frontend: http://localhost:8081"
+            echo "- Backend API: http://localhost:8080"
+            if [[ "$USE_SELF_SIGNED" == "true" ]]; then
+                echo "- HTTPS: https://localhost:8443"
+            fi
+        else
+            echo "- Check if ports 80, 443, 8080, 3306, 6379 are available"
+        fi
+    fi
 }
 
 # Print final instructions
@@ -1245,7 +1303,10 @@ main() {
     setup_monitoring
     
     # Final verification and instructions
-    verify_installation
+    if ! verify_installation; then
+        log_warning "Installation completed but some services may need troubleshooting"
+        show_troubleshooting_info
+    fi
     print_final_instructions
     
     log_success "Installation completed successfully at $(date)"
