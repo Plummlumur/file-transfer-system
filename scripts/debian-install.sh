@@ -114,7 +114,7 @@ check_requirements() {
     fi
     
     # Check Node.js version requirement
-    local node_version="18"
+    local node_version="20"
     log_info "Node.js $node_version.x LTS will be installed"
     
     log_success "System requirements check completed"
@@ -168,10 +168,10 @@ update_system() {
     log_info "Updating system packages..."
     
     # Update package lists
-    sudo apt update -qq || error_exit "Failed to update package lists"
+    sudo apt update || error_exit "Failed to update package lists"
     
     # Upgrade existing packages
-    sudo apt upgrade -y -qq || log_warning "Some packages failed to upgrade"
+    sudo apt upgrade -y || log_warning "Some packages failed to upgrade"
     
     # Install essential packages
     local essential_packages=(
@@ -216,25 +216,10 @@ install_docker() {
     
     log_info "Installing Docker..."
     
-    # Add Docker's official GPG key
-    sudo mkdir -p /etc/apt/keyrings
-    
-    # Detect OS and use appropriate repository
-    source /etc/os-release
-    local docker_os="debian"
-    if [[ "$ID" == "ubuntu" ]]; then
-        docker_os="ubuntu"
-    fi
-    
-    curl -fsSL https://download.docker.com/linux/${docker_os}/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    sudo chmod a+r /etc/apt/keyrings/docker.gpg
-    
-    # Add Docker repository
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${docker_os} $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-    
-    # Install Docker
-    sudo apt update -qq
-    sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    # Use Docker's official convenience script for better compatibility
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sudo sh get-docker.sh
+    rm get-docker.sh
     
     # Add user to docker group
     sudo usermod -aG docker $USER
@@ -293,21 +278,22 @@ install_mysql() {
     
     log_info "Installing MySQL Server..."
     
-    # Set MySQL root password before installation to avoid interactive prompts
-    local mysql_root_password="TempRootPass123!"
+    # Generate secure root password
+    local mysql_root_password=$(openssl rand -hex 32)
+    
+    # Set MySQL to non-interactive mode
     sudo debconf-set-selections <<< "mysql-server mysql-server/root_password password $mysql_root_password"
     sudo debconf-set-selections <<< "mysql-server mysql-server/root_password_again password $mysql_root_password"
+    export DEBIAN_FRONTEND=noninteractive
     
-    # Install MySQL - try different package names for different versions
-    if sudo apt install -y mysql-server-8.0 2>/dev/null; then
-        log_info "Installed mysql-server-8.0"
-    elif sudo apt install -y mysql-server 2>/dev/null; then
+    # Install MySQL server (prefer mysql-server-8.0 for modern installations)
+    if sudo apt install -y mysql-server mysql-client 2>/dev/null; then
         log_info "Installed mysql-server"
-    elif sudo apt install -y default-mysql-server 2>/dev/null; then
-        log_info "Installed default-mysql-server"
     else
         error_exit "Failed to install MySQL server. Please install manually."
     fi
+    
+    unset DEBIAN_FRONTEND
     
     # Start MySQL service
     sudo systemctl start mysql
@@ -317,7 +303,7 @@ install_mysql() {
     log_info "Waiting for MySQL to start..."
     local retries=10
     while [[ $retries -gt 0 ]]; do
-        if sudo mysql -u root -p"$mysql_root_password" -e "SELECT 1;" &>/dev/null; then
+        if sudo mysql -u root -e "SELECT 1;" &>/dev/null || sudo mysql -u root -p"$mysql_root_password" -e "SELECT 1;" &>/dev/null; then
             break
         fi
         log_info "MySQL not ready yet, waiting... ($retries retries left)"
@@ -329,21 +315,30 @@ install_mysql() {
         error_exit "MySQL failed to start properly"
     fi
     
-    # Secure MySQL installation
+    # Secure MySQL installation using mysql_secure_installation equivalent
     log_info "Securing MySQL installation..."
-    sudo mysql -u root -p"$mysql_root_password" -e "DELETE FROM mysql.user WHERE User='';" 2>/dev/null || true
-    sudo mysql -u root -p"$mysql_root_password" -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>/dev/null || true
-    sudo mysql -u root -p"$mysql_root_password" -e "DROP DATABASE IF EXISTS test;" 2>/dev/null || true
-    sudo mysql -u root -p"$mysql_root_password" -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" 2>/dev/null || true
-    sudo mysql -u root -p"$mysql_root_password" -e "FLUSH PRIVILEGES;" 2>/dev/null || true
+    
+    # Try to connect without password first (MySQL 8.0+ may use auth_socket)
+    local mysql_cmd="sudo mysql -u root"
+    if ! $mysql_cmd -e "SELECT 1;" &>/dev/null; then
+        mysql_cmd="sudo mysql -u root -p$mysql_root_password"
+    fi
+    
+    # Set root password and secure installation
+    $mysql_cmd -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '$mysql_root_password';" 2>/dev/null || true
+    $mysql_cmd -e "DELETE FROM mysql.user WHERE User='';" 2>/dev/null || true
+    $mysql_cmd -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>/dev/null || true
+    $mysql_cmd -e "DROP DATABASE IF EXISTS test;" 2>/dev/null || true
+    $mysql_cmd -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" 2>/dev/null || true
+    $mysql_cmd -e "FLUSH PRIVILEGES;" 2>/dev/null || true
     
     # Create database and user
     log_info "Creating database and user..."
     local db_password=$(openssl rand -hex 32)
-    sudo mysql -u root -p"$mysql_root_password" -e "CREATE DATABASE file_transfer CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-    sudo mysql -u root -p"$mysql_root_password" -e "CREATE USER 'fileuser'@'localhost' IDENTIFIED BY '$db_password';"
-    sudo mysql -u root -p"$mysql_root_password" -e "GRANT ALL PRIVILEGES ON file_transfer.* TO 'fileuser'@'localhost';"
-    sudo mysql -u root -p"$mysql_root_password" -e "FLUSH PRIVILEGES;"
+    $mysql_cmd -e "CREATE DATABASE file_transfer CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    $mysql_cmd -e "CREATE USER 'fileuser'@'localhost' IDENTIFIED BY '$db_password';"
+    $mysql_cmd -e "GRANT ALL PRIVILEGES ON file_transfer.* TO 'fileuser'@'localhost';"
+    $mysql_cmd -e "FLUSH PRIVILEGES;"
     
     # Save credentials
     echo "DB_PASSWORD=$db_password" >> "$APP_DIR/.env.production"
@@ -605,12 +600,14 @@ server {
     server_name $DOMAIN;
     
     # SSL Configuration (will be updated by certbot)
-    ssl_certificate /etc/ssl/certs/ssl-cert-snakeoil.pem;
-    ssl_certificate_key /etc/ssl/private/ssl-cert-snakeoil.key;
+    # Use secure self-signed cert as fallback instead of snakeoil
+    ssl_certificate /etc/ssl/certs/file-transfer-selfsigned.crt;
+    ssl_certificate_key /etc/ssl/private/file-transfer-selfsigned.key;
     ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
     ssl_prefer_server_ciphers off;
     ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
     
     # Security headers
     add_header X-Frame-Options "SAMEORIGIN" always;
@@ -663,6 +660,17 @@ server {
 }
 EOF
     
+    # Generate self-signed certificate as fallback
+    if [[ ! -f /etc/ssl/certs/file-transfer-selfsigned.crt ]]; then
+        log_info "Generating self-signed SSL certificate as fallback..."
+        sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            -keyout /etc/ssl/private/file-transfer-selfsigned.key \
+            -out /etc/ssl/certs/file-transfer-selfsigned.crt \
+            -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=$DOMAIN"
+        sudo chmod 600 /etc/ssl/private/file-transfer-selfsigned.key
+        sudo chmod 644 /etc/ssl/certs/file-transfer-selfsigned.crt
+    fi
+    
     # Enable the site
     sudo ln -sf /etc/nginx/sites-available/file-transfer /etc/nginx/sites-enabled/
     sudo rm -f /etc/nginx/sites-enabled/default
@@ -686,8 +694,16 @@ setup_ssl() {
     
     log_info "Setting up SSL certificate with Let's Encrypt..."
     
-    # Install certbot
-    sudo apt install -y certbot python3-certbot-nginx
+    # Install certbot - handle different package names across distributions
+    if sudo apt install -y certbot python3-certbot-nginx 2>/dev/null; then
+        log_info "Installed certbot with Nginx plugin"
+    elif sudo apt install -y snapd && sudo snap install --classic certbot 2>/dev/null; then
+        sudo ln -sf /snap/bin/certbot /usr/bin/certbot
+        log_info "Installed certbot via snap"
+    else
+        log_warning "Failed to install certbot. SSL setup will need to be done manually."
+        return 1
+    fi
     
     # Obtain certificate
     sudo certbot --nginx -d "$DOMAIN" --email "$EMAIL" --agree-tos --non-interactive --redirect
