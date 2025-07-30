@@ -80,11 +80,77 @@ system_settings (key_name, value, updated_at, ...)
 
 ## 🛠️ Installation
 
-### Quick Setup
+### Docker Setup (Recommended for Testing)
+
+#### Automated Local Setup with SSL Support
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd file-transfer-app
+cd file-transfer-system
+
+# Run automated setup (includes SSL option)
+./scripts/setup-local.sh
+```
+
+This script will:
+- Set up environment files with secure passwords
+- Optionally generate self-signed SSL certificates
+- Build and start all services with Docker
+- Run database migrations
+- Show access URLs and management commands
+
+#### Manual Docker Setup
+```bash
+# Clone and setup
+git clone <repository-url>
+cd file-transfer-system
+
+# Create environment file
+cp .env.example .env
+# Edit .env with your configuration
+
+# Generate SSL certificates for HTTPS (optional)
+./scripts/generate-ssl-cert.sh localhost 365
+
+# Start services
+docker compose up -d
+
+# Run database migrations
+docker compose exec backend npm run migrate
+docker compose exec backend npm run seed
+```
+
+#### Access URLs
+- **HTTP**: http://localhost:8081
+- **HTTPS**: https://localhost:8443 (if SSL certificates are generated)
+- **API**: http://localhost:8080
+- **Database**: localhost:3306
+- **Redis**: localhost:6379
+
+#### SSL Certificates for Local Testing
+
+For local/test installations where Let's Encrypt certificates cannot be obtained, you can generate self-signed certificates:
+
+```bash
+# Generate certificates for localhost
+./scripts/generate-ssl-cert.sh localhost 365
+
+# Generate certificates for custom domain
+./scripts/generate-ssl-cert.sh myapp.local 365
+
+# Generate certificates for IP address
+./scripts/generate-ssl-cert.sh 192.168.1.100 90
+```
+
+**Note**: Self-signed certificates will show browser security warnings. Click "Advanced" → "Proceed to localhost" to accept them.
+
+### Node.js Development Setup
+
+#### Quick Setup
+```bash
+# Clone the repository
+git clone <repository-url>
+cd file-transfer-system
 
 # Run setup script
 npm run setup
@@ -93,7 +159,7 @@ npm run setup
 npm run dev
 ```
 
-### Manual Setup
+#### Manual Setup
 
 1. **Install Dependencies**
 ```bash
